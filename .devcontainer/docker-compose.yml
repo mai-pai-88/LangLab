@@ -1,0 +1,9 @@
+services:
+  langlab:
+    image: langlab:latest
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - ..:/workspaces/LangLab:cached
+    command: sleep infinity

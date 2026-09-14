@@ -1,0 +1,18 @@
+{
+  "name": "LangLab",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "langlab",
+  "workspaceFolder": "/workspaces/LangLab",
+  "remoteUser": "labuser",
+  "remoteEnv": {
+    "AWS_ACCESS_KEY_ID": "${localEnv:AWS_ACCESS_KEY_ID:}",
+    "AWS_SECRET_ACCESS_KEY": "${localEnv:AWS_SECRET_ACCESS_KEY:}",
+    "AWS_SESSION_TOKEN": "${localEnv:AWS_SESSION_TOKEN:}",
+    "AWS_REGION": "${localEnv:AWS_REGION:us-east-2}",
+    "AWS_DEFAULT_REGION": "${localEnv:AWS_DEFAULT_REGION:us-east-2}"
+  },
+  "mounts": [
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws,target=/home/labuser/.aws,type=bind,consistency=cached"
+  ],
+  "postCreateCommand": "sudo chown -R labuser:labuser /workspaces/LangLab && python3 -m pip install --break-system-packages --ignore-installed --upgrade pip && python3 -m pip install --break-system-packages langchain langchain-classic langchain-openai langchain-community faiss-cpu pypdf boto3 \"botocore[crt]\" && python3 /workspaces/LangLab/load_secrets.py"
+}
