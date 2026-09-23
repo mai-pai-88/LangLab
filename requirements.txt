@@ -1,0 +1,13 @@
+boto3
+botocore[crt]
+docx2txt
+faiss-cpu
+langchain
+langchain-classic
+langchain-community
+langchain-openai
+langchain-text-splitters
+opensearch-py
+pypdf
+python-dotenv
+streamlit

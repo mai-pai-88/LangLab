@@ -11,7 +11,7 @@
     ],
     "repository": {
       "url": "https://github.com/mai-pai-88/LangLab",
-      "revision": "34d47ce670aaecbaea8318155d7a1515e667ff5b"
+      "revision": "7a10268b846d5f4a04ac7aef0a3c46ff7dad38ad"
     }
   },
   "components": [
@@ -77,6 +77,32 @@
       ]
     },
     {
+      "id": "general",
+      "type": "backend",
+      "label": "Store Summary",
+      "sublabel": "GENERAL answer",
+      "pos": [
+        390,
+        500
+      ],
+      "size": [
+        150,
+        66
+      ],
+      "sources": [
+        {
+          "path": "app.py",
+          "line": 193,
+          "label": "get_store_summary"
+        },
+        {
+          "path": "app.py",
+          "line": 248,
+          "label": "answer_general"
+        }
+      ]
+    },
+    {
       "id": "qa",
       "type": "backend",
       "label": "RetrievalQA",
@@ -101,7 +127,7 @@
       "id": "retriever",
       "type": "backend",
       "label": "Retriever",
-      "sublabel": "faiss \u00b7 bm25 \u00b7 hybrid",
+      "sublabel": "faiss · bm25 · hybrid",
       "pos": [
         800,
         330
@@ -169,8 +195,8 @@
     {
       "id": "ingest",
       "type": "backend",
-      "label": "PDF Ingest",
-      "sublabel": "PyPDF + splitter",
+      "label": "Doc Ingest",
+      "sublabel": "loaders + 500/50 split",
       "pos": [
         1190,
         330
@@ -184,6 +210,11 @@
           "path": "app.py",
           "line": 160,
           "label": "directory loader"
+        },
+        {
+          "path": "app.py",
+          "line": 131,
+          "label": "splitter"
         }
       ]
     },
@@ -191,7 +222,7 @@
       "id": "pdfs",
       "type": "database",
       "label": "doc_files/",
-      "sublabel": "PDF corpus",
+      "sublabel": "pdf · docx · text",
       "pos": [
         1190,
         560
@@ -265,7 +296,8 @@
         "opensearch",
         "ingest",
         "pdfs",
-        "secrets"
+        "secrets",
+        "general"
       ],
       "pad": 16
     }
@@ -293,23 +325,37 @@
       "variant": "emphasis"
     },
     {
+      "id": "general-route",
+      "from": "router",
+      "to": "general",
+      "label": "GENERAL",
+      "labelAt": [
+        465,
+        448
+      ]
+    },
+    {
       "id": "retrieve",
       "from": "qa",
       "to": "retriever",
-      "label": "top-4",
-      "variant": "emphasis"
+      "label": "≤8 fused chunks",
+      "variant": "emphasis",
+      "labelAt": [
+        773,
+        318
+      ]
     },
     {
       "id": "semantic",
       "from": "retriever",
       "to": "faiss",
-      "label": "similarity"
+      "label": "top-4 similarity"
     },
     {
       "id": "keyword",
       "from": "retriever",
       "to": "opensearch",
-      "label": "BM25 match"
+      "label": "top-4 BM25"
     },
     {
       "id": "embed",
@@ -327,7 +373,7 @@
       "id": "load",
       "from": "pdfs",
       "to": "ingest",
-      "label": "PDF pages"
+      "label": "documents"
     },
     {
       "id": "llm-route",
@@ -396,7 +442,8 @@
       "title": "Retriever modes",
       "items": [
         "RETRIEVER_MODE selects faiss, opensearch, or hybrid",
-        "hybrid merges both with 0.5 / 0.5 rank fusion"
+        "hybrid merges both with 0.5 / 0.5 rank fusion",
+        "chains are built once and reused via st.cache_resource"
       ]
     }
   ]

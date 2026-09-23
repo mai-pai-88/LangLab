@@ -1,0 +1,285 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Hybrid Retrieval Request",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      823
+    ],
+    "column_fit": "spread"
+  },
+  "participants": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "User",
+      "sublabel": "browser"
+    },
+    {
+      "id": "chat",
+      "type": "frontend",
+      "label": "Streamlit",
+      "sublabel": "chat_app.py"
+    },
+    {
+      "id": "router",
+      "type": "backend",
+      "label": "Router",
+      "sublabel": "classify + rephrase"
+    },
+    {
+      "id": "qa",
+      "type": "backend",
+      "label": "RetrievalQA",
+      "sublabel": "chain_type stuff"
+    },
+    {
+      "id": "ensemble",
+      "type": "backend",
+      "label": "Ensemble",
+      "sublabel": "RRF 0.5 / 0.5"
+    },
+    {
+      "id": "faiss",
+      "type": "database",
+      "label": "FAISS",
+      "sublabel": "in-memory vectors"
+    },
+    {
+      "id": "opensearch",
+      "type": "database",
+      "label": "OpenSearch",
+      "sublabel": "langlab-chunks",
+      "brand": "opensearch"
+    },
+    {
+      "id": "openai",
+      "type": "external",
+      "label": "OpenAI API",
+      "sublabel": "LLM + embeddings",
+      "brand": "openai"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 307,
+      "label": "Route"
+    },
+    {
+      "from": 321,
+      "to": 539,
+      "label": "Hybrid retrieval"
+    },
+    {
+      "from": 553,
+      "to": 715,
+      "label": "Answer"
+    }
+  ],
+  "messages": [
+    {
+      "id": "ask",
+      "from": "user",
+      "to": "chat",
+      "y": 165,
+      "label": "question",
+      "variant": "emphasis"
+    },
+    {
+      "id": "route",
+      "from": "chat",
+      "to": "router",
+      "y": 197,
+      "label": "route question",
+      "variant": "emphasis"
+    },
+    {
+      "id": "classify",
+      "from": "router",
+      "to": "openai",
+      "y": 229,
+      "label": "classify GENERAL / SPECIFIC",
+      "variant": "dashed"
+    },
+    {
+      "id": "specific",
+      "from": "openai",
+      "to": "router",
+      "y": 261,
+      "label": "SPECIFIC",
+      "variant": "return",
+      "note": "GENERAL answers from the store summary and skips retrieval"
+    },
+    {
+      "id": "rephrase",
+      "from": "router",
+      "to": "openai",
+      "y": 293,
+      "label": "rephrase question",
+      "variant": "dashed"
+    },
+    {
+      "id": "invoke-qa",
+      "from": "router",
+      "to": "qa",
+      "y": 333,
+      "label": "standalone query",
+      "variant": "emphasis"
+    },
+    {
+      "id": "retrieve",
+      "from": "qa",
+      "to": "ensemble",
+      "y": 365,
+      "label": "get documents",
+      "variant": "emphasis"
+    },
+    {
+      "id": "embed-query",
+      "from": "faiss",
+      "to": "openai",
+      "y": 397,
+      "label": "embed query",
+      "variant": "dashed"
+    },
+    {
+      "id": "semantic",
+      "from": "ensemble",
+      "to": "faiss",
+      "y": 429,
+      "label": "similarity top-4"
+    },
+    {
+      "id": "semantic-hits",
+      "from": "faiss",
+      "to": "ensemble",
+      "y": 461,
+      "label": "4 chunks",
+      "variant": "return"
+    },
+    {
+      "id": "keyword",
+      "from": "ensemble",
+      "to": "opensearch",
+      "y": 493,
+      "label": "BM25 match top-4"
+    },
+    {
+      "id": "keyword-hits",
+      "from": "opensearch",
+      "to": "ensemble",
+      "y": 525,
+      "label": "4 chunks",
+      "variant": "return"
+    },
+    {
+      "id": "fused",
+      "from": "ensemble",
+      "to": "qa",
+      "y": 565,
+      "label": "≤8 fused chunks",
+      "variant": "return",
+      "note": "rank fusion + dedup; chunks found by both rank highest"
+    },
+    {
+      "id": "answer-llm",
+      "from": "qa",
+      "to": "openai",
+      "y": 605,
+      "label": "stuff prompt",
+      "variant": "emphasis"
+    },
+    {
+      "id": "answer-text",
+      "from": "openai",
+      "to": "qa",
+      "y": 637,
+      "label": "answer",
+      "variant": "return"
+    },
+    {
+      "id": "result",
+      "from": "qa",
+      "to": "chat",
+      "y": 669,
+      "label": "result",
+      "variant": "return"
+    },
+    {
+      "id": "render",
+      "from": "chat",
+      "to": "user",
+      "y": 701,
+      "label": "markdown answer",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "chat",
+      "from": 192,
+      "to": 706,
+      "type": "frontend"
+    },
+    {
+      "participant": "router",
+      "from": 197,
+      "to": 338,
+      "type": "backend"
+    },
+    {
+      "participant": "qa",
+      "from": 333,
+      "to": 674,
+      "type": "backend"
+    },
+    {
+      "participant": "ensemble",
+      "from": 365,
+      "to": 570,
+      "type": "backend"
+    },
+    {
+      "participant": "faiss",
+      "from": 392,
+      "to": 466,
+      "type": "database"
+    },
+    {
+      "participant": "opensearch",
+      "from": 488,
+      "to": 530,
+      "type": "database"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Built once",
+      "items": [
+        "Both indexes are built at startup from the same 500/50 chunks",
+        "st.cache_resource reuses the chains on every question"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Why hybrid",
+      "items": [
+        "FAISS matches meaning; BM25 matches exact terms like OSPF or RADIUS",
+        "Only the FAISS search calls OpenAI; BM25 needs no embeddings"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Trade-off",
+      "items": [
+        "Better recall, not lower latency: both searches run one after the other",
+        "Enabled only when RETRIEVER_MODE=hybrid"
+      ]
+    }
+  ]
+}

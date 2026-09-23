@@ -12,7 +12,8 @@ if "OPENAI_API_KEY" not in os.environ:
 # LangChain imports for environment setup and secret loading
 from langchain_community.document_loaders import (
     PyPDFLoader,
-    PyPDFDirectoryLoader
+    Docx2txtLoader,
+    TextLoader
 )
 # LangChain imports for text splitting
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -47,6 +48,14 @@ HYBRID_WEIGHTS = [0.5, 0.5]
 
 OPENSEARCH_URL = os.environ.get("OPENSEARCH_URL", "http://localhost:9200")
 OPENSEARCH_INDEX = "langlab-chunks"
+
+# File extensions loaded as UTF-8 text (plain text, markup, config, data, and source files)
+TEXT_EXTENSIONS = (
+    ".txt", ".text", ".log", ".csv", ".tsv", ".rst", ".ini", ".cfg", ".conf",
+    ".yaml", ".yml", ".toml", ".xml", ".json", ".py", ".md", ".markdown",
+)
+# All file extensions the document store can load
+SUPPORTED_EXTENSIONS = (".pdf", ".docx") + TEXT_EXTENSIONS
 
 
 # Retriever that runs a BM25 keyword (match) query against an OpenSearch index
@@ -149,17 +158,40 @@ def build_qa_chain(docs, retriever_mode="faiss"):
     )
 
 
-# Function to build the RetrievalQA chain from a single PDF document
-def build_qa_chain_single(pdf_path="AAA-Identity-Management-Security.pdf", retriever_mode="faiss"):
-    """Load a single PDF and return a RetrievalQA chain using the chosen retriever."""
-    docs = PyPDFLoader(pdf_path).load()
+# Function to load a single document with the loader that matches its file extension
+def load_document(path):
+    """Load a PDF, DOCX, or text-based file and return its LangChain documents."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".pdf":
+        return PyPDFLoader(path).load()
+    if ext == ".docx":
+        return Docx2txtLoader(path).load()
+    if ext in TEXT_EXTENSIONS:
+        return TextLoader(path, encoding="utf-8", autodetect_encoding=True).load()
+    raise ValueError(f"Unsupported file type {ext!r}; expected one of {SUPPORTED_EXTENSIONS}")
+
+
+# Function to list the supported document files in a directory (recursively)
+def find_documents(doc_dir="doc_files"):
+    """Return the sorted paths of all supported, non-hidden files under a directory."""
+    paths = glob.glob(os.path.join(doc_dir, "**", "*"), recursive=True)
+    return sorted(
+        path for path in paths
+        if os.path.isfile(path) and path.lower().endswith(SUPPORTED_EXTENSIONS)
+    )
+
+
+# Function to build the RetrievalQA chain from a single document
+def build_qa_chain_single(doc_path="AAA-Identity-Management-Security.pdf", retriever_mode="faiss"):
+    """Load a single document and return a RetrievalQA chain using the chosen retriever."""
+    docs = load_document(doc_path)
     return build_qa_chain(docs, retriever_mode)
 
 
-# Function to build the RetrievalQA chain from a directory of PDF documents
-def build_qa_chain_directory(pdf_dir="doc_files", retriever_mode="faiss"):
-    """Load all PDFs in a directory and return a RetrievalQA chain using the chosen retriever."""
-    docs = PyPDFDirectoryLoader(pdf_dir).load()
+# Function to build the RetrievalQA chain from a directory of documents
+def build_qa_chain_directory(doc_dir="doc_files", retriever_mode="faiss"):
+    """Load all supported documents in a directory and return a RetrievalQA chain."""
+    docs = [doc for path in find_documents(doc_dir) for doc in load_document(path)]
     return build_qa_chain(docs, retriever_mode)
 
 # Prompt used to rephrase a raw question into a clearer, standalone question
@@ -189,11 +221,10 @@ def rephrase_question(rephraser, question):
     return rephrased or question
 
 
-# Function to summarize the titles/count of PDFs in a document store directory
-def get_store_summary(pdf_dir="doc_files"):
+# Function to summarize the titles/count of documents in a document store directory
+def get_store_summary(doc_dir="doc_files"):
     """Build a plain-text summary of the documents found in a directory."""
-    pdf_paths = sorted(glob.glob(os.path.join(pdf_dir, "**", "*.pdf"), recursive=True))
-    titles = [os.path.splitext(os.path.basename(path))[0] for path in pdf_paths]
+    titles = [os.path.basename(path) for path in find_documents(doc_dir)]
     doc_list = "\n".join(f"- {title}" for title in titles) or "(no documents found)"
     return f"The document store contains {len(titles)} document(s):\n{doc_list}"
 
@@ -254,9 +285,9 @@ def answer_general_question(chain, question, store_summary):
     return answer or store_summary
 
 
-# Function to parse command-line arguments for questions to ask the PDF document
+# Function to parse command-line arguments for questions to ask the document
 def parse_args():
-    parser = argparse.ArgumentParser(description="Ask questions about the loaded PDF document.")
+    parser = argparse.ArgumentParser(description="Ask questions about the loaded document.")
     parser.add_argument(
         "questions",
         nargs="*",
