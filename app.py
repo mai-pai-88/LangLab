@@ -25,65 +25,142 @@ from langchain_openai import (
 )
 # LangChain import for vector store (FAISS)
 from langchain_community.vectorstores import FAISS
+# LangChain imports for the OpenSearch keyword retriever and hybrid (ensemble) retrieval
+from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
+from langchain_classic.retrievers import EnsembleRetriever
+from opensearchpy import OpenSearch, helpers
 # LangChain imports for the question-rephrasing preprocessor
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 # Chain type for the RetrievalQA chain 
 # -> (in order of speed/cost trade-off: "stuff", "map_reduce", "refine", "map_rerank")
-CHAIN_TYPE = "map_rerank"
+CHAIN_TYPE = "stuff"
+
+# Retriever modes: "faiss" (semantic), "opensearch" (BM25 keyword), "hybrid" (both, merged)
+RETRIEVER_MODES = ("faiss", "opensearch", "hybrid")
+# Number of chunks each retriever returns
+TOP_K = 4
+# Weights for [FAISS, OpenSearch] results when merging with Reciprocal Rank Fusion
+HYBRID_WEIGHTS = [0.5, 0.5]
+
+OPENSEARCH_URL = os.environ.get("OPENSEARCH_URL", "http://localhost:9200")
+OPENSEARCH_INDEX = "langlab-chunks"
 
 
-# Function to build the RetrievalQA chain from a single PDF document
-def build_qa_chain_single(pdf_path="AAA-Identity-Management-Security.pdf"):
-    """Load a single PDF, build the FAISS vector store, and return a RetrievalQA chain."""
-    loader = PyPDFLoader(pdf_path)
-    docs = loader.load()
+# Retriever that runs a BM25 keyword (match) query against an OpenSearch index
+class OpenSearchBM25Retriever(BaseRetriever):
+    """Return the top-k chunks from OpenSearch ranked by BM25 keyword relevance."""
+    client: OpenSearch
+    index_name: str
+    k: int = TOP_K
+
+    def _get_relevant_documents(self, query, *, run_manager=None):
+        response = self.client.search(
+            index=self.index_name,
+            body={"size": self.k, "query": {"match": {"text": query}}},
+        )
+        return [
+            Document(page_content=hit["_source"]["text"], metadata=hit["_source"]["metadata"])
+            for hit in response["hits"]["hits"]
+        ]
+
+
+# Function to (re)create the OpenSearch index and load the document chunks into it
+def index_chunks_opensearch(chunks, index_name=OPENSEARCH_INDEX):
+    """Rebuild the OpenSearch index from the chunks and return a connected client."""
+    client = OpenSearch(OPENSEARCH_URL)
+    # Recreate the index so it always matches the chunks held in FAISS
+    if client.indices.exists(index=index_name):
+        client.indices.delete(index=index_name)
+    # "dynamic": False keeps all metadata in _source but only indexes the fields mapped here
+    client.indices.create(index=index_name, body={
+        "mappings": {
+            "properties": {
+                "text": {"type": "text"},
+                "metadata": {
+                    "dynamic": False,
+                    "properties": {
+                        "source": {"type": "keyword"},
+                        "page": {"type": "integer"},
+                    },
+                },
+            }
+        }
+    })
+    helpers.bulk(client, (
+        {"_index": index_name, "text": chunk.page_content, "metadata": chunk.metadata}
+        for chunk in chunks
+    ))
+    # Make the new documents searchable immediately
+    client.indices.refresh(index=index_name)
+    return client
+
+
+# Function to build the retriever for the chosen mode from the document chunks
+def build_retriever(chunks, retriever_mode="faiss"):
+    """Build a FAISS, OpenSearch BM25, or hybrid (FAISS + BM25) retriever over the chunks."""
+    if retriever_mode not in RETRIEVER_MODES:
+        raise ValueError(f"retriever_mode must be one of {RETRIEVER_MODES}, got {retriever_mode!r}")
+
+    faiss_retriever = None
+    if retriever_mode in ("faiss", "hybrid"):
+        # FAISS vector store for document embeddings
+        # max_retries with backoff and a smaller batch size avoid tokens-per-minute rate limit errors
+        embeddings = OpenAIEmbeddings(chunk_size=100, max_retries=6)
+        db = FAISS.from_documents(chunks, embeddings)
+        faiss_retriever = db.as_retriever(search_kwargs={"k": TOP_K})
+        if retriever_mode == "faiss":
+            return faiss_retriever
+
+    # OpenSearch keyword index (no embeddings needed, so no OpenAI cost)
+    client = index_chunks_opensearch(chunks)
+    keyword_retriever = OpenSearchBM25Retriever(client=client, index_name=OPENSEARCH_INDEX)
+    if retriever_mode == "opensearch":
+        return keyword_retriever
+
+    # Merge semantic and keyword results using weighted Reciprocal Rank Fusion
+    return EnsembleRetriever(
+        retrievers=[faiss_retriever, keyword_retriever],
+        weights=HYBRID_WEIGHTS,
+    )
+
+
+# Function to split documents and build the RetrievalQA chain with the chosen retriever
+def build_qa_chain(docs, retriever_mode="faiss"):
+    """Split the documents into chunks and return a RetrievalQA chain over them."""
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
         chunk_overlap=50
     )
-    # Split the loaded documents into smaller chunks for embedding
+    # Split the loaded documents into smaller chunks for embedding/indexing
     chunks = splitter.split_documents(docs)
-
-    # FAISS vector store for document embeddings
-    # max_retries with backoff and a smaller batch size avoid tokens-per-minute rate limit errors
-    embeddings = OpenAIEmbeddings(chunk_size=100, max_retries=6)
-    db = FAISS.from_documents(chunks, embeddings)
 
     # Initialize the language model (LLM) for the RetrievalQA chain
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
-    # Build and return the RetrievalQA chain using the LLM and FAISS retriever
+    # Build and return the RetrievalQA chain using the LLM and selected retriever
     return RetrievalQA.from_chain_type(
         llm=llm,
         chain_type=CHAIN_TYPE,
-        retriever=db.as_retriever()
+        retriever=build_retriever(chunks, retriever_mode),
+        return_source_documents=True,
     )
+
+
+# Function to build the RetrievalQA chain from a single PDF document
+def build_qa_chain_single(pdf_path="AAA-Identity-Management-Security.pdf", retriever_mode="faiss"):
+    """Load a single PDF and return a RetrievalQA chain using the chosen retriever."""
+    docs = PyPDFLoader(pdf_path).load()
+    return build_qa_chain(docs, retriever_mode)
 
 
 # Function to build the RetrievalQA chain from a directory of PDF documents
-def build_qa_chain_directory(pdf_dir="doc_files"):
-    """Load all PDFs in a directory, build the FAISS vector store, and return a RetrievalQA chain."""
-    loader = PyPDFDirectoryLoader(pdf_dir)
-    docs = loader.load()
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50
-    )
-    chunks = splitter.split_documents(docs)
-
-    # max_retries with backoff and a smaller batch size avoid tokens-per-minute rate limit errors
-    embeddings = OpenAIEmbeddings(chunk_size=100, max_retries=6)
-    db = FAISS.from_documents(chunks, embeddings)
-
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-
-    return RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type=CHAIN_TYPE,
-        retriever=db.as_retriever()
-    )
+def build_qa_chain_directory(pdf_dir="doc_files", retriever_mode="faiss"):
+    """Load all PDFs in a directory and return a RetrievalQA chain using the chosen retriever."""
+    docs = PyPDFDirectoryLoader(pdf_dir).load()
+    return build_qa_chain(docs, retriever_mode)
 
 # Prompt used to rephrase a raw question into a clearer, standalone question
 REPHRASE_PROMPT = PromptTemplate.from_template(
@@ -186,12 +263,24 @@ def parse_args():
         default=["What is the title and chapters of this document?"],
         help="One or more questions to ask (default: 'What is the title and chapters of this document?')",
     )
+    parser.add_argument(
+        "--retriever",
+        choices=RETRIEVER_MODES,
+        default="faiss",
+        help="Retrieval method: faiss (semantic), opensearch (BM25 keyword), or hybrid (both) (default: faiss)",
+    )
     return parser.parse_args()
 
 # Main entry point for the script
 if __name__ == "__main__":
     args = parse_args()
-    qa_chain = build_qa_chain_single()
+    qa_chain = build_qa_chain_single(retriever_mode=args.retriever)
     for question in args.questions:
         result = qa_chain.invoke(question)
-        print(f'\n{result}\n')
+        print(f'\n[{args.retriever}] {result["query"]}\n{result["result"]}\n')
+        # Show which chunks were retrieved so the retriever modes can be compared
+        print("Sources:")
+        for doc in result["source_documents"]:
+            snippet = " ".join(doc.page_content.split())[:100]
+            print(f'  - {doc.metadata.get("source")} p.{doc.metadata.get("page")}: {snippet}...')
+        print()

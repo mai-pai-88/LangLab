@@ -1,3 +1,5 @@
+import os
+
 import streamlit as st
 
 from app import (
@@ -17,7 +19,8 @@ st.title("LangLab Chatbot")
 
 @st.cache_resource
 def get_qa_chain():
-    return build_qa_chain_directory()
+    # RETRIEVER_MODE selects "faiss" (default), "opensearch", or "hybrid" retrieval
+    return build_qa_chain_directory(retriever_mode=os.environ.get("RETRIEVER_MODE", "faiss"))
 
 
 @st.cache_resource

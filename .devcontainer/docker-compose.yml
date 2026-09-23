@@ -6,4 +6,24 @@ services:
       dockerfile: .devcontainer/Dockerfile
     volumes:
       - ..:/workspaces/LangLab:cached
+    environment:
+      - OPENSEARCH_URL=http://opensearch:9200
+    depends_on:
+      - opensearch
     command: sleep infinity
+
+  # Single-node OpenSearch for BM25 keyword search (security plugin disabled for local lab use only)
+  opensearch:
+    image: opensearchproject/opensearch:2
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+
+volumes:
+  opensearch-data:
