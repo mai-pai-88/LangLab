@@ -12,7 +12,31 @@
     "AWS_DEFAULT_REGION": "${localEnv:AWS_DEFAULT_REGION:us-east-2}"
   },
   "mounts": [
-    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws,target=/home/labuser/.aws,type=bind,consistency=cached"
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws,target=/home/labuser/.aws,type=bind,consistency=cached",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.claude,target=/home/labuser/.claude,type=bind,consistency=cached",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.claude.json,target=/home/labuser/.claude.json,type=bind,consistency=cached"
   ],
-  "postCreateCommand": "sudo chown -R labuser:labuser /workspaces/LangLab && python3 -m pip install --break-system-packages --ignore-installed --upgrade pip && python3 -m pip install --break-system-packages langchain langchain-classic langchain-openai langchain-community faiss-cpu opensearch-py pypdf boto3 \"botocore[crt]\" && python3 /workspaces/LangLab/load_secrets.py"
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "christian-kohler.npm-intellisense",
+        "davidanson.vscode-markdownlint",
+        "eamodio.gitlens",
+        "esbenp.prettier-vscode",
+        "github.vscode-github-actions",
+        "ms-pyright.pyright",
+        "ms-python.debugpy",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.vscode-python-envs",
+        "openai.chatgpt",
+        "openai.codex-audio",
+        "shd101wyy.markdown-preview-enhanced",
+        "sst-dev.opencode-v2",
+        "yzhang.markdown-all-in-one"
+      ]
+    }
+  },
+  "postCreateCommand": "sudo chown -R labuser:labuser /workspaces/LangLab /home/labuser/.aws && python3 -m pip install --break-system-packages --ignore-installed --upgrade pip && python3 -m pip install --break-system-packages langchain langchain-classic langchain-openai langchain-community faiss-cpu opensearch-py pypdf boto3 \"botocore[crt]\" && python3 /workspaces/LangLab/load_secrets.py"
 }
