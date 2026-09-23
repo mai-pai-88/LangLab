@@ -1,0 +1,403 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "LangLab RAG Chatbot",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1360,
+      780
+    ],
+    "repository": {
+      "url": "https://github.com/mai-pai-88/LangLab",
+      "revision": "34d47ce670aaecbaea8318155d7a1515e667ff5b"
+    }
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "User",
+      "sublabel": "browser",
+      "pos": [
+        20,
+        330
+      ],
+      "size": [
+        110,
+        66
+      ]
+    },
+    {
+      "id": "chat_ui",
+      "type": "frontend",
+      "label": "Streamlit Chat",
+      "sublabel": "chat_app.py",
+      "pos": [
+        180,
+        330
+      ],
+      "size": [
+        140,
+        66
+      ],
+      "sources": [
+        {
+          "path": "chat_app.py",
+          "line": 59,
+          "label": "chat_input"
+        }
+      ]
+    },
+    {
+      "id": "router",
+      "type": "backend",
+      "label": "Question Router",
+      "sublabel": "classify + rephrase",
+      "pos": [
+        390,
+        330
+      ],
+      "size": [
+        150,
+        66
+      ],
+      "sources": [
+        {
+          "path": "app.py",
+          "line": 214,
+          "label": "classifier"
+        },
+        {
+          "path": "app.py",
+          "line": 176,
+          "label": "rephraser"
+        }
+      ]
+    },
+    {
+      "id": "qa",
+      "type": "backend",
+      "label": "RetrievalQA",
+      "sublabel": "chain_type stuff",
+      "pos": [
+        605,
+        330
+      ],
+      "size": [
+        140,
+        66
+      ],
+      "sources": [
+        {
+          "path": "app.py",
+          "line": 131,
+          "label": "build_qa_chain"
+        }
+      ]
+    },
+    {
+      "id": "retriever",
+      "type": "backend",
+      "label": "Retriever",
+      "sublabel": "faiss \u00b7 bm25 \u00b7 hybrid",
+      "pos": [
+        800,
+        330
+      ],
+      "size": [
+        150,
+        66
+      ],
+      "sources": [
+        {
+          "path": "app.py",
+          "line": 102,
+          "label": "build_retriever"
+        }
+      ]
+    },
+    {
+      "id": "faiss",
+      "type": "database",
+      "label": "FAISS",
+      "sublabel": "in-memory vectors",
+      "pos": [
+        1000,
+        200
+      ],
+      "size": [
+        140,
+        66
+      ],
+      "sources": [
+        {
+          "path": "app.py",
+          "line": 112,
+          "label": "FAISS.from_documents"
+        }
+      ]
+    },
+    {
+      "id": "opensearch",
+      "type": "database",
+      "label": "OpenSearch 2",
+      "sublabel": "langlab-chunks",
+      "brand": "opensearch",
+      "pos": [
+        1000,
+        460
+      ],
+      "size": [
+        140,
+        66
+      ],
+      "sources": [
+        {
+          "path": "app.py",
+          "line": 71,
+          "label": "index_chunks"
+        },
+        {
+          "path": ".devcontainer/docker-compose.yml",
+          "line": 16,
+          "label": "service"
+        }
+      ]
+    },
+    {
+      "id": "ingest",
+      "type": "backend",
+      "label": "PDF Ingest",
+      "sublabel": "PyPDF + splitter",
+      "pos": [
+        1190,
+        330
+      ],
+      "size": [
+        140,
+        66
+      ],
+      "sources": [
+        {
+          "path": "app.py",
+          "line": 160,
+          "label": "directory loader"
+        }
+      ]
+    },
+    {
+      "id": "pdfs",
+      "type": "database",
+      "label": "doc_files/",
+      "sublabel": "PDF corpus",
+      "pos": [
+        1190,
+        560
+      ],
+      "size": [
+        140,
+        66
+      ]
+    },
+    {
+      "id": "openai",
+      "type": "external",
+      "label": "OpenAI API",
+      "sublabel": "gpt-4o-mini + embeddings",
+      "brand": "openai",
+      "pos": [
+        580,
+        80
+      ],
+      "size": [
+        190,
+        66
+      ]
+    },
+    {
+      "id": "secrets",
+      "type": "security",
+      "label": "load_secrets.py",
+      "sublabel": "env bootstrap",
+      "pos": [
+        175,
+        530
+      ],
+      "size": [
+        150,
+        66
+      ],
+      "sources": [
+        {
+          "path": "load_secrets.py",
+          "line": 57,
+          "label": "load_secrets"
+        }
+      ]
+    },
+    {
+      "id": "aws_sm",
+      "type": "cloud",
+      "label": "AWS Secrets Manager",
+      "sublabel": "LANGLAB_SECRETS",
+      "pos": [
+        160,
+        680
+      ],
+      "size": [
+        180,
+        66
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Docker Compose devcontainer",
+      "wraps": [
+        "chat_ui",
+        "router",
+        "qa",
+        "retriever",
+        "faiss",
+        "opensearch",
+        "ingest",
+        "pdfs",
+        "secrets"
+      ],
+      "pad": 16
+    }
+  ],
+  "connections": [
+    {
+      "id": "ask",
+      "from": "user",
+      "to": "chat_ui",
+      "label": "HTTP",
+      "variant": "emphasis"
+    },
+    {
+      "id": "route",
+      "from": "chat_ui",
+      "to": "router",
+      "label": "question",
+      "variant": "emphasis"
+    },
+    {
+      "id": "specific",
+      "from": "router",
+      "to": "qa",
+      "label": "SPECIFIC",
+      "variant": "emphasis"
+    },
+    {
+      "id": "retrieve",
+      "from": "qa",
+      "to": "retriever",
+      "label": "top-4",
+      "variant": "emphasis"
+    },
+    {
+      "id": "semantic",
+      "from": "retriever",
+      "to": "faiss",
+      "label": "similarity"
+    },
+    {
+      "id": "keyword",
+      "from": "retriever",
+      "to": "opensearch",
+      "label": "BM25 match"
+    },
+    {
+      "id": "embed",
+      "from": "ingest",
+      "to": "faiss",
+      "label": "embed chunks"
+    },
+    {
+      "id": "bulk",
+      "from": "ingest",
+      "to": "opensearch",
+      "label": "bulk index"
+    },
+    {
+      "id": "load",
+      "from": "pdfs",
+      "to": "ingest",
+      "label": "PDF pages"
+    },
+    {
+      "id": "llm-route",
+      "from": "router",
+      "to": "openai",
+      "label": "classify",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "llm-answer",
+      "from": "qa",
+      "to": "openai",
+      "label": "answer",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "llm-embed",
+      "from": "faiss",
+      "to": "openai",
+      "label": "embeddings",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "right",
+      "via": [
+        [
+          1070,
+          113
+        ]
+      ]
+    },
+    {
+      "id": "fetch-secret",
+      "from": "secrets",
+      "to": "aws_sm",
+      "label": "GetSecretValue",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        250,
+        638
+      ]
+    },
+    {
+      "id": "set-key",
+      "from": "secrets",
+      "to": "chat_ui",
+      "label": "OPENAI_API_KEY",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Question path",
+      "items": [
+        "GENERAL questions are answered from the doc_files summary",
+        "SPECIFIC questions are rephrased, then answered by RetrievalQA"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Retriever modes",
+      "items": [
+        "RETRIEVER_MODE selects faiss, opensearch, or hybrid",
+        "hybrid merges both with 0.5 / 0.5 rank fusion"
+      ]
+    }
+  ]
+}
