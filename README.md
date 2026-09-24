@@ -4,7 +4,7 @@ LangLab is a document-aware chatbot and question-answering app for searching a c
 
 ## What the app does
 
-See the architectural overview here: [architecture.md](architecture.md).
+See the architectural overview here: [architecture.md](.docs/architecture.md).
 
 LangLab works as a retrieval-augmented generation (RAG) system:
 
