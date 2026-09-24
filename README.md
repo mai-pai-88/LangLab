@@ -15,6 +15,7 @@ LangLab works as a retrieval-augmented generation (RAG) system:
   - `faiss`: semantic search with embeddings
   - `opensearch`: keyword retrieval via BM25
   - `hybrid`: combines both strategies
+- From the user's perspective, FAISS helps the chatbot understand questions that use different wording from the documents, while OpenSearch helps it find exact names, terms, acronyms, and identifiers. Users ask questions in the chat and do not interact with either search system directly.
 - It rephrases the user question to improve search quality.
 - It classifies whether the question is about the document collection itself or about the content inside the documents.
 - It uses a language model to answer the final question based on the retrieved passages.
