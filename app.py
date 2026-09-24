@@ -1,6 +1,13 @@
 import argparse
 import glob
+import hashlib
+import json
+import logging
 import os
+from pathlib import Path
+import shutil
+import sys
+import time
 from dotenv import load_dotenv
 from load_secrets import load_secrets
 
@@ -35,12 +42,16 @@ from opensearchpy import OpenSearch, helpers
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
+
+logger = logging.getLogger(__name__)
+
 # Chain type for the RetrievalQA chain 
 # -> (in order of speed/cost trade-off: "stuff", "map_reduce", "refine", "map_rerank")
 CHAIN_TYPE = "stuff"
 
 # Retriever modes: "faiss" (semantic), "opensearch" (BM25 keyword), "hybrid" (both, merged)
 RETRIEVER_MODES = ("faiss", "opensearch", "hybrid")
+DEFAULT_RETRIEVER_MODE = "hybrid"
 # Number of chunks each retriever returns
 TOP_K = 4
 # Weights for [FAISS, OpenSearch] results when merging with Reciprocal Rank Fusion
@@ -48,6 +59,13 @@ HYBRID_WEIGHTS = [0.5, 0.5]
 
 OPENSEARCH_URL = os.environ.get("OPENSEARCH_URL", "http://localhost:9200")
 OPENSEARCH_INDEX = "langlab-chunks"
+APP_DIR = Path(__file__).resolve().parent
+INGESTION_STATE_DIR = Path(os.environ.get("LANGLAB_STATE_DIR", APP_DIR / ".langlab"))
+EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", "100"))
+EMBEDDING_MAX_RETRIES = int(os.environ.get("EMBEDDING_MAX_RETRIES", "6"))
+DEFAULT_DOCUMENT_PATH = os.path.join(
+    APP_DIR, "doc_files", "AAA-Identity-Management-Security.pdf"
+)
 
 # File extensions loaded as UTF-8 text (plain text, markup, config, data, and source files)
 TEXT_EXTENSIONS = (
@@ -56,6 +74,105 @@ TEXT_EXTENSIONS = (
 )
 # All file extensions the document store can load
 SUPPORTED_EXTENSIONS = (".pdf", ".docx") + TEXT_EXTENSIONS
+
+
+def _validate_embedding_settings():
+    """Reject invalid embedding controls before issuing external API requests."""
+    if EMBEDDING_BATCH_SIZE < 1:
+        raise ValueError("EMBEDDING_BATCH_SIZE must be at least 1.")
+    if EMBEDDING_MAX_RETRIES < 0:
+        raise ValueError("EMBEDDING_MAX_RETRIES cannot be negative.")
+
+
+def _hash_file(path):
+    """Return a content hash without loading an entire document into memory."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as file_handle:
+        for block in iter(lambda: file_handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def build_document_manifest(paths, doc_dir):
+    """Create a deterministic, content-addressed version record for a document store."""
+    root = Path(doc_dir).resolve()
+    return {
+        "version": 1,
+        "documents": [
+            {
+                "path": str(Path(path).resolve().relative_to(root)),
+                "sha256": _hash_file(path),
+            }
+            for path in paths
+        ],
+        "chunk_size": 500,
+        "chunk_overlap": 50,
+    }
+
+
+def _document_store_cache_dir(doc_dir):
+    """Return the application-managed cache directory for one document store."""
+    store_id = hashlib.sha256(str(Path(doc_dir).resolve()).encode()).hexdigest()[:16]
+    return INGESTION_STATE_DIR / "stores" / store_id
+
+
+def _load_cached_faiss(manifest, cache_dir, embeddings):
+    """Load a semantic index only when its saved manifest matches the current store."""
+    manifest_path = cache_dir / "manifest.json"
+    index_dir = cache_dir / "faiss"
+    try:
+        saved_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+    if saved_manifest != manifest or not index_dir.is_dir():
+        return None
+    try:
+        return FAISS.load_local(
+            str(index_dir), embeddings, allow_dangerous_deserialization=True
+        )
+    except Exception:
+        logger.warning("Discarding unreadable cached FAISS index at %s", index_dir, exc_info=True)
+        return None
+
+
+def _save_cached_faiss(database, manifest, cache_dir):
+    """Persist a completed semantic index and its manifest after successful ingestion."""
+    temporary_dir = cache_dir.with_name(f"{cache_dir.name}.tmp")
+    shutil.rmtree(temporary_dir, ignore_errors=True)
+    temporary_dir.mkdir(parents=True, exist_ok=True)
+    database.save_local(str(temporary_dir / "faiss"))
+    (temporary_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    cache_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(cache_dir, ignore_errors=True)
+    temporary_dir.replace(cache_dir)
+
+
+def ingest_document_store(doc_dir="doc_files"):
+    """Load a document store and return documents plus its content-version manifest."""
+    started_at = time.perf_counter()
+    paths = find_documents(doc_dir)
+    manifest = build_document_manifest(paths, doc_dir)
+    docs = [doc for path in paths for doc in load_document(path)]
+    if not docs:
+        raise ValueError(f"No supported documents with readable content were found in: {doc_dir}")
+    logger.info(
+        "Document ingestion completed: documents=%d pages=%d duration_seconds=%.3f",
+        len(paths), len(docs), time.perf_counter() - started_at,
+    )
+    return docs, manifest
+
+
+def _manifest_digest(manifest):
+    """Return the stable identifier shared by FAISS and OpenSearch cache entries."""
+    serialized_manifest = json.dumps(manifest, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized_manifest.encode()).hexdigest()
+
+
+def _opensearch_generation_name(index_name, manifest):
+    """Return the immutable keyword-index generation for a document manifest."""
+    return f"{index_name}--{_manifest_digest(manifest)[:16]}"
 
 
 # Retriever that runs a BM25 keyword (match) query against an OpenSearch index
@@ -76,55 +193,85 @@ class OpenSearchBM25Retriever(BaseRetriever):
         ]
 
 
-# Function to (re)create the OpenSearch index and load the document chunks into it
-def index_chunks_opensearch(chunks, index_name=OPENSEARCH_INDEX):
-    """Rebuild the OpenSearch index from the chunks and return a connected client."""
+# Function to build or reuse an OpenSearch generation and point the stable alias at it
+def index_chunks_opensearch(chunks, index_name=OPENSEARCH_INDEX, manifest=None):
+    """Build or reuse a keyword index generation, then atomically promote its alias."""
     client = OpenSearch(OPENSEARCH_URL)
-    # Recreate the index so it always matches the chunks held in FAISS
-    if client.indices.exists(index=index_name):
-        client.indices.delete(index=index_name)
-    # "dynamic": False keeps all metadata in _source but only indexes the fields mapped here
-    client.indices.create(index=index_name, body={
-        "mappings": {
-            "properties": {
-                "text": {"type": "text"},
-                "metadata": {
-                    "dynamic": False,
-                    "properties": {
-                        "source": {"type": "keyword"},
-                        "page": {"type": "integer"},
+    if manifest is None:
+        # Preserve a simple one-off indexing path for callers without a document manifest.
+        manifest = {"version": 1, "chunks": len(chunks)}
+    generation_name = _opensearch_generation_name(index_name, manifest)
+
+    if not client.indices.exists(index=generation_name):
+        started_at = time.perf_counter()
+        client.indices.create(index=generation_name, body={
+            "mappings": {
+                "_meta": {"manifest": manifest},
+                "properties": {
+                    "text": {"type": "text"},
+                    "metadata": {
+                        "dynamic": False,
+                        "properties": {
+                            "source": {"type": "keyword"},
+                            "page": {"type": "integer"},
+                        },
                     },
                 },
             }
-        }
+        })
+        helpers.bulk(client, (
+            {"_index": generation_name, "text": chunk.page_content, "metadata": chunk.metadata}
+            for chunk in chunks
+        ))
+        client.indices.refresh(index=generation_name)
+        logger.info(
+            "Keyword index built: generation=%s chunks=%d duration_seconds=%.3f",
+            generation_name, len(chunks), time.perf_counter() - started_at,
+        )
+    else:
+        logger.info("Keyword index cache hit: generation=%s", generation_name)
+
+    # The alias changes only after a generation exists and is searchable.
+    client.indices.update_aliases(body={
+        "actions": [
+            {"remove": {"index": f"{index_name}--*", "alias": index_name}},
+            {"add": {"index": generation_name, "alias": index_name}},
+        ]
     })
-    helpers.bulk(client, (
-        {"_index": index_name, "text": chunk.page_content, "metadata": chunk.metadata}
-        for chunk in chunks
-    ))
-    # Make the new documents searchable immediately
-    client.indices.refresh(index=index_name)
     return client
 
 
 # Function to build the retriever for the chosen mode from the document chunks
-def build_retriever(chunks, retriever_mode="faiss"):
+def build_retriever(chunks, retriever_mode=DEFAULT_RETRIEVER_MODE, manifest=None, cache_dir=None):
     """Build a FAISS, OpenSearch BM25, or hybrid (FAISS + BM25) retriever over the chunks."""
     if retriever_mode not in RETRIEVER_MODES:
         raise ValueError(f"retriever_mode must be one of {RETRIEVER_MODES}, got {retriever_mode!r}")
 
     faiss_retriever = None
     if retriever_mode in ("faiss", "hybrid"):
-        # FAISS vector store for document embeddings
-        # max_retries with backoff and a smaller batch size avoid tokens-per-minute rate limit errors
-        embeddings = OpenAIEmbeddings(chunk_size=100, max_retries=6)
-        db = FAISS.from_documents(chunks, embeddings)
+        _validate_embedding_settings()
+        embeddings = OpenAIEmbeddings(
+            chunk_size=EMBEDDING_BATCH_SIZE,
+            max_retries=EMBEDDING_MAX_RETRIES,
+        )
+        db = _load_cached_faiss(manifest, cache_dir, embeddings) if manifest and cache_dir else None
+        if db is None:
+            started_at = time.perf_counter()
+            db = FAISS.from_documents(chunks, embeddings)
+            if manifest and cache_dir:
+                _save_cached_faiss(db, manifest, cache_dir)
+            logger.info(
+                "Semantic index built: chunks=%d duration_seconds=%.3f",
+                len(chunks), time.perf_counter() - started_at,
+            )
+        else:
+            logger.info("Semantic index cache hit: chunks=%d", len(chunks))
         faiss_retriever = db.as_retriever(search_kwargs={"k": TOP_K})
         if retriever_mode == "faiss":
             return faiss_retriever
 
     # OpenSearch keyword index (no embeddings needed, so no OpenAI cost)
-    client = index_chunks_opensearch(chunks)
+    client = index_chunks_opensearch(chunks, manifest=manifest)
     keyword_retriever = OpenSearchBM25Retriever(client=client, index_name=OPENSEARCH_INDEX)
     if retriever_mode == "opensearch":
         return keyword_retriever
@@ -137,14 +284,18 @@ def build_retriever(chunks, retriever_mode="faiss"):
 
 
 # Function to split documents and build the RetrievalQA chain with the chosen retriever
-def build_qa_chain(docs, retriever_mode="faiss"):
+def build_qa_chain(docs, retriever_mode=DEFAULT_RETRIEVER_MODE, manifest=None, cache_dir=None):
     """Split the documents into chunks and return a RetrievalQA chain over them."""
+    if not docs:
+        raise ValueError("No documents are available to build the QA chain.")
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
         chunk_overlap=50
     )
     # Split the loaded documents into smaller chunks for embedding/indexing
     chunks = splitter.split_documents(docs)
+    if not chunks:
+        raise ValueError("Document splitting produced no searchable text chunks.")
 
     # Initialize the language model (LLM) for the RetrievalQA chain
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
@@ -153,7 +304,7 @@ def build_qa_chain(docs, retriever_mode="faiss"):
     return RetrievalQA.from_chain_type(
         llm=llm,
         chain_type=CHAIN_TYPE,
-        retriever=build_retriever(chunks, retriever_mode),
+        retriever=build_retriever(chunks, retriever_mode, manifest, cache_dir),
         return_source_documents=True,
     )
 
@@ -161,19 +312,27 @@ def build_qa_chain(docs, retriever_mode="faiss"):
 # Function to load a single document with the loader that matches its file extension
 def load_document(path):
     """Load a PDF, DOCX, or text-based file and return its LangChain documents."""
+    path = os.fspath(path)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Document file does not exist or is not a regular file: {path}")
     ext = os.path.splitext(path)[1].lower()
-    if ext == ".pdf":
-        return PyPDFLoader(path).load()
-    if ext == ".docx":
-        return Docx2txtLoader(path).load()
-    if ext in TEXT_EXTENSIONS:
+    if ext not in SUPPORTED_EXTENSIONS:
+        raise ValueError(f"Unsupported file type {ext!r}; expected one of {SUPPORTED_EXTENSIONS}")
+    try:
+        if ext == ".pdf":
+            return PyPDFLoader(path).load()
+        if ext == ".docx":
+            return Docx2txtLoader(path).load()
         return TextLoader(path, encoding="utf-8", autodetect_encoding=True).load()
-    raise ValueError(f"Unsupported file type {ext!r}; expected one of {SUPPORTED_EXTENSIONS}")
+    except Exception as error:
+        raise ValueError(f"Unable to load document {path!r}: {error}") from error
 
 
 # Function to list the supported document files in a directory (recursively)
 def find_documents(doc_dir="doc_files"):
     """Return the sorted paths of all supported, non-hidden files under a directory."""
+    if not os.path.isdir(doc_dir):
+        raise FileNotFoundError(f"Document directory does not exist: {doc_dir}")
     paths = glob.glob(os.path.join(doc_dir, "**", "*"), recursive=True)
     return sorted(
         path for path in paths
@@ -182,17 +341,38 @@ def find_documents(doc_dir="doc_files"):
 
 
 # Function to build the RetrievalQA chain from a single document
-def build_qa_chain_single(doc_path="AAA-Identity-Management-Security.pdf", retriever_mode="faiss"):
+def build_qa_chain_single(doc_path=DEFAULT_DOCUMENT_PATH, retriever_mode=DEFAULT_RETRIEVER_MODE):
     """Load a single document and return a RetrievalQA chain using the chosen retriever."""
     docs = load_document(doc_path)
     return build_qa_chain(docs, retriever_mode)
 
 
 # Function to build the RetrievalQA chain from a directory of documents
-def build_qa_chain_directory(doc_dir="doc_files", retriever_mode="faiss"):
+def build_qa_chain_directory(doc_dir="doc_files", retriever_mode=DEFAULT_RETRIEVER_MODE):
     """Load all supported documents in a directory and return a RetrievalQA chain."""
-    docs = [doc for path in find_documents(doc_dir) for doc in load_document(path)]
-    return build_qa_chain(docs, retriever_mode)
+    docs, manifest = ingest_document_store(doc_dir)
+    return build_qa_chain(
+        docs,
+        retriever_mode,
+        manifest=manifest,
+        cache_dir=_document_store_cache_dir(doc_dir),
+    )
+
+
+def warm_document_store(doc_dir="doc_files", retriever_mode=DEFAULT_RETRIEVER_MODE):
+    """Build or reuse retrieval indexes without starting an interactive QA request."""
+    docs, manifest = ingest_document_store(doc_dir)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+    chunks = splitter.split_documents(docs)
+    if not chunks:
+        raise ValueError("Document splitting produced no searchable text chunks.")
+    build_retriever(
+        chunks,
+        retriever_mode,
+        manifest=manifest,
+        cache_dir=_document_store_cache_dir(doc_dir),
+    )
+    return {"documents": len(manifest["documents"]), "chunks": len(chunks)}
 
 # Prompt used to rephrase a raw question into a clearer, standalone question
 REPHRASE_PROMPT = PromptTemplate.from_template(
@@ -297,21 +477,44 @@ def parse_args():
     parser.add_argument(
         "--retriever",
         choices=RETRIEVER_MODES,
-        default="faiss",
-        help="Retrieval method: faiss (semantic), opensearch (BM25 keyword), or hybrid (both) (default: faiss)",
+        default=DEFAULT_RETRIEVER_MODE,
+        help="Retrieval method: faiss (semantic), opensearch (BM25 keyword), or hybrid (both) (default: hybrid)",
+    )
+    parser.add_argument(
+        "--warm-index",
+        action="store_true",
+        help="Build or reuse the document-store indexes, then exit without answering a question.",
     )
     return parser.parse_args()
 
+def main():
+    """Run the command-line document QA flow and return a process exit code."""
+    args = parse_args()
+    try:
+        if args.warm_index:
+            result = warm_document_store(retriever_mode=args.retriever)
+            print(
+                f"Warmed {args.retriever} index for {result['documents']} document(s) "
+                f"and {result['chunks']} chunk(s)."
+            )
+            return 0
+        qa_chain = build_qa_chain_single(retriever_mode=args.retriever)
+        for question in args.questions:
+            result = qa_chain.invoke(question)
+            print(f'\n[{args.retriever}] {result["query"]}\n{result["result"]}\n')
+            # Show which chunks were retrieved so the retriever modes can be compared
+            print("Sources:")
+            for doc in result["source_documents"]:
+                snippet = " ".join(doc.page_content.split())[:100]
+                print(f'  - {doc.metadata.get("source")} p.{doc.metadata.get("page")}: {snippet}...')
+            print()
+    except Exception as error:
+        logger.exception("Document QA command failed")
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
 # Main entry point for the script
 if __name__ == "__main__":
-    args = parse_args()
-    qa_chain = build_qa_chain_single(retriever_mode=args.retriever)
-    for question in args.questions:
-        result = qa_chain.invoke(question)
-        print(f'\n[{args.retriever}] {result["query"]}\n{result["result"]}\n')
-        # Show which chunks were retrieved so the retriever modes can be compared
-        print("Sources:")
-        for doc in result["source_documents"]:
-            snippet = " ".join(doc.page_content.split())[:100]
-            print(f'  - {doc.metadata.get("source")} p.{doc.metadata.get("page")}: {snippet}...')
-        print()
+    raise SystemExit(main())

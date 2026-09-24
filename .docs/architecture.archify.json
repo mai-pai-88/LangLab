@@ -6,13 +6,9 @@
     "locale": "en",
     "quality_profile": "showcase",
     "viewBox": [
-      1360,
+      1380,
       780
-    ],
-    "repository": {
-      "url": "https://github.com/mai-pai-88/LangLab",
-      "revision": "7a10268b846d5f4a04ac7aef0a3c46ff7dad38ad"
-    }
+    ]
   },
   "components": [
     {
@@ -41,13 +37,6 @@
       "size": [
         140,
         66
-      ],
-      "sources": [
-        {
-          "path": "chat_app.py",
-          "line": 59,
-          "label": "chat_input"
-        }
       ]
     },
     {
@@ -62,18 +51,6 @@
       "size": [
         150,
         66
-      ],
-      "sources": [
-        {
-          "path": "app.py",
-          "line": 214,
-          "label": "classifier"
-        },
-        {
-          "path": "app.py",
-          "line": 176,
-          "label": "rephraser"
-        }
       ]
     },
     {
@@ -88,18 +65,6 @@
       "size": [
         150,
         66
-      ],
-      "sources": [
-        {
-          "path": "app.py",
-          "line": 193,
-          "label": "get_store_summary"
-        },
-        {
-          "path": "app.py",
-          "line": 248,
-          "label": "answer_general"
-        }
       ]
     },
     {
@@ -114,20 +79,13 @@
       "size": [
         140,
         66
-      ],
-      "sources": [
-        {
-          "path": "app.py",
-          "line": 131,
-          "label": "build_qa_chain"
-        }
       ]
     },
     {
       "id": "retriever",
       "type": "backend",
       "label": "Retriever",
-      "sublabel": "faiss · bm25 · hybrid",
+      "sublabel": "hybrid (default)",
       "pos": [
         800,
         330
@@ -135,87 +93,63 @@
       "size": [
         150,
         66
-      ],
-      "sources": [
-        {
-          "path": "app.py",
-          "line": 102,
-          "label": "build_retriever"
-        }
       ]
     },
     {
       "id": "faiss",
       "type": "database",
       "label": "FAISS",
-      "sublabel": "in-memory vectors",
+      "sublabel": "semantic vectors",
       "pos": [
-        1000,
+        990,
         200
       ],
       "size": [
         140,
         66
+      ]
+    },
+    {
+      "id": "faiss_cache",
+      "type": "database",
+      "label": "Index Cache",
+      "sublabel": ".langlab/stores",
+      "pos": [
+        1205,
+        200
       ],
-      "sources": [
-        {
-          "path": "app.py",
-          "line": 112,
-          "label": "FAISS.from_documents"
-        }
+      "size": [
+        140,
+        66
       ]
     },
     {
       "id": "opensearch",
       "type": "database",
       "label": "OpenSearch 2",
-      "sublabel": "langlab-chunks",
+      "sublabel": "alias → generation",
       "brand": "opensearch",
       "pos": [
-        1000,
+        990,
         460
       ],
       "size": [
         140,
         66
-      ],
-      "sources": [
-        {
-          "path": "app.py",
-          "line": 71,
-          "label": "index_chunks"
-        },
-        {
-          "path": ".devcontainer/docker-compose.yml",
-          "line": 16,
-          "label": "service"
-        }
       ]
     },
     {
       "id": "ingest",
       "type": "backend",
       "label": "Doc Ingest",
-      "sublabel": "loaders + 500/50 split",
+      "sublabel": "manifest · 500/50 split",
       "pos": [
-        1190,
+        1200,
         330
       ],
       "size": [
-        140,
+        150,
         66
-      ],
-      "sources": [
-        {
-          "path": "app.py",
-          "line": 160,
-          "label": "directory loader"
-        },
-        {
-          "path": "app.py",
-          "line": 131,
-          "label": "splitter"
-        }
       ]
     },
     {
@@ -224,7 +158,7 @@
       "label": "doc_files/",
       "sublabel": "pdf · docx · text",
       "pos": [
-        1190,
+        1205,
         560
       ],
       "size": [
@@ -259,13 +193,6 @@
       "size": [
         150,
         66
-      ],
-      "sources": [
-        {
-          "path": "load_secrets.py",
-          "line": 57,
-          "label": "load_secrets"
-        }
       ]
     },
     {
@@ -297,7 +224,8 @@
         "ingest",
         "pdfs",
         "secrets",
-        "general"
+        "general",
+        "faiss_cache"
       ],
       "pad": 16
     }
@@ -364,10 +292,16 @@
       "label": "embed chunks"
     },
     {
+      "id": "cache-io",
+      "from": "faiss",
+      "to": "faiss_cache",
+      "label": "load / save"
+    },
+    {
       "id": "bulk",
       "from": "ingest",
       "to": "opensearch",
-      "label": "bulk index"
+      "label": "bulk if new"
     },
     {
       "id": "load",
@@ -402,7 +336,7 @@
       "toSide": "right",
       "via": [
         [
-          1070,
+          1060,
           113
         ]
       ]
@@ -441,9 +375,16 @@
       "dot": "amber",
       "title": "Retriever modes",
       "items": [
-        "RETRIEVER_MODE selects faiss, opensearch, or hybrid",
-        "hybrid merges both with 0.5 / 0.5 rank fusion",
-        "chains are built once and reused via st.cache_resource"
+        "hybrid is the default; RETRIEVER_MODE or --retriever selects faiss or opensearch",
+        "hybrid merges both with 0.5 / 0.5 rank fusion"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Index cache",
+      "items": [
+        "One SHA-256 manifest reuses the FAISS index and the OpenSearch generation",
+        "python app.py --warm-index builds indexes before users arrive"
       ]
     }
   ]

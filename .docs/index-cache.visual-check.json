@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "visual-check",
+  "evidenceKind": "automated-browser",
+  "status": "fail",
+  "visualReview": "pending",
+  "artifact": {
+    "path": "/workspaces/LangLab/.docs/index-cache.html",
+    "sha256": "17838f5613f41a5ca5cc013f52ad94b7c02953805473759d428c9324cbd3f931",
+    "bytes": 814205
+  },
+  "state": {
+    "detail": "read",
+    "motion": "still"
+  },
+  "chrome": {
+    "status": "available",
+    "executable": "/tmp/chrome-nosandbox"
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/visual-check-runtime",
+      "severity": "error",
+      "message": "visual-check could not complete its Chrome inspection.",
+      "subject": {
+        "artifact": "/workspaces/LangLab/.docs/index-cache.html"
+      },
+      "evidence": {
+        "reason": "Page.captureScreenshot: Unable to capture screenshot"
+      },
+      "supportedFixes": [
+        "resolve the reported Chrome inspection error, then rerun visual-check"
+      ]
+    }
+  ],
+  "containment": {
+    "status": "fail",
+    "viewports": []
+  },
+  "readability": {
+    "status": "fail",
+    "minimumProjectedNodeTextPx": 6,
+    "viewports": []
+  },
+  "viewerChrome": {
+    "status": "fail",
+    "viewports": []
+  },
+  "captures": {
+    "status": "fail",
+    "screenshots": [],
+    "contactSheet": null
+  },
+  "sidecars": {
+    "receipt": "index-cache.visual-check.json",
+    "contactSheet": "index-cache.visual-check.html"
+  },
+  "error": "Page.captureScreenshot: Unable to capture screenshot"
+}

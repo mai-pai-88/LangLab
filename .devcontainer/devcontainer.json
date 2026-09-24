@@ -22,20 +22,29 @@
         "christian-kohler.npm-intellisense",
         "davidanson.vscode-markdownlint",
         "eamodio.gitlens",
+        "eriklynd.json-tools",
         "esbenp.prettier-vscode",
+        "foam.foam-vscode",
+        "george-alisson.html-preview-vscode",
         "github.vscode-github-actions",
+        "ms-azuretools.vscode-containers",
         "ms-pyright.pyright",
         "ms-python.debugpy",
         "ms-python.python",
         "ms-python.vscode-pylance",
         "ms-python.vscode-python-envs",
+        "ms-vscode.powershell",
+        "mushan.vscode-paste-image",
+        "njpwerner.autodocstring",
         "openai.chatgpt",
         "openai.codex-audio",
         "shd101wyy.markdown-preview-enhanced",
         "sst-dev.opencode-v2",
-        "yzhang.markdown-all-in-one"
+        "willasm.obsidian-md-vsc",
+        "yzhang.markdown-all-in-one",
+        "zainchen.json"
       ]
     }
   },
-  "postCreateCommand": "sudo chown -R labuser:labuser /workspaces/LangLab /home/labuser/.aws && python3 /workspaces/LangLab/load_secrets.py"
+  "postCreateCommand": "sudo chown -R labuser:labuser /workspaces/LangLab /home/labuser/.aws && python3 /workspaces/LangLab/load_secrets.py && python3 -m pytest"
 }

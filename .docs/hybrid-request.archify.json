@@ -46,13 +46,13 @@
       "id": "faiss",
       "type": "database",
       "label": "FAISS",
-      "sublabel": "in-memory vectors"
+      "sublabel": "cached vectors"
     },
     {
       "id": "opensearch",
       "type": "database",
       "label": "OpenSearch",
-      "sublabel": "langlab-chunks",
+      "sublabel": "langlab-chunks alias",
       "brand": "opensearch"
     },
     {
@@ -261,7 +261,7 @@
       "dot": "cyan",
       "title": "Built once",
       "items": [
-        "Both indexes are built at startup from the same 500/50 chunks",
+        "Both indexes come from the same 500/50 chunks and are reused while the manifest is unchanged",
         "st.cache_resource reuses the chains on every question"
       ]
     },
@@ -278,7 +278,7 @@
       "title": "Trade-off",
       "items": [
         "Better recall, not lower latency: both searches run one after the other",
-        "Enabled only when RETRIEVER_MODE=hybrid"
+        "Default mode; RETRIEVER_MODE=faiss or opensearch opts out"
       ]
     }
   ]

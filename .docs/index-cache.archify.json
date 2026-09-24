@@ -1,0 +1,219 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Index Build with Manifest Cache",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {
+      "id": "startup",
+      "label": "Startup + ingestion"
+    },
+    {
+      "id": "semantic",
+      "label": "FAISS cache (.langlab)"
+    },
+    {
+      "id": "keyword",
+      "label": "OpenSearch generations"
+    }
+  ],
+  "phases": [
+    {
+      "id": "discover",
+      "label": "Discover",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "index",
+      "label": "Reuse or rebuild",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "serve",
+      "label": "Serve",
+      "fromCol": 5,
+      "toCol": 5
+    }
+  ],
+  "mainPath": [
+    "start",
+    "discover",
+    "split",
+    "check",
+    "ready"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "lane": "startup",
+      "col": 0,
+      "type": "frontend",
+      "label": "Startup",
+      "sublabel": "chat_app · --warm-index"
+    },
+    {
+      "id": "discover",
+      "lane": "startup",
+      "col": 1,
+      "type": "backend",
+      "label": "Find + Hash",
+      "sublabel": "SHA-256 manifest"
+    },
+    {
+      "id": "split",
+      "lane": "startup",
+      "col": 2,
+      "type": "backend",
+      "label": "Load + Split",
+      "sublabel": "500 / 50 chunks"
+    },
+    {
+      "id": "ready",
+      "lane": "startup",
+      "col": 5,
+      "type": "backend",
+      "label": "Retriever Ready",
+      "sublabel": "hybrid RRF",
+      "width": 120
+    },
+    {
+      "id": "check",
+      "lane": "semantic",
+      "col": 3,
+      "type": "backend",
+      "label": "Manifest Match?",
+      "sublabel": "load_local on match",
+      "width": 124
+    },
+    {
+      "id": "embed",
+      "lane": "semantic",
+      "col": 4,
+      "type": "external",
+      "label": "Embed + Save",
+      "sublabel": "batch 100 · atomic",
+      "brand": "openai",
+      "width": 124
+    },
+    {
+      "id": "gen",
+      "lane": "keyword",
+      "col": 3,
+      "type": "backend",
+      "label": "Generation Exists?",
+      "sublabel": "chunks--<digest>",
+      "width": 140
+    },
+    {
+      "id": "bulk",
+      "lane": "keyword",
+      "col": 4,
+      "type": "database",
+      "label": "Bulk Index",
+      "sublabel": "new generation"
+    },
+    {
+      "id": "alias",
+      "lane": "keyword",
+      "col": 5,
+      "type": "database",
+      "label": "Swap Alias",
+      "sublabel": "atomic promote",
+      "brand": "opensearch",
+      "width": 112
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "discover",
+      "variant": "emphasis"
+    },
+    {
+      "from": "discover",
+      "to": "split",
+      "variant": "emphasis"
+    },
+    {
+      "from": "split",
+      "to": "check",
+      "variant": "emphasis"
+    },
+    {
+      "from": "check",
+      "to": "ready",
+      "label": "match",
+      "variant": "emphasis"
+    },
+    {
+      "from": "check",
+      "to": "embed",
+      "label": "miss",
+      "role": "branch"
+    },
+    {
+      "from": "embed",
+      "to": "ready",
+      "label": "vectors",
+      "role": "branch"
+    },
+    {
+      "from": "split",
+      "to": "gen",
+      "label": "chunks"
+    },
+    {
+      "from": "gen",
+      "to": "bulk",
+      "label": "miss",
+      "role": "branch"
+    },
+    {
+      "from": "bulk",
+      "to": "alias"
+    },
+    {
+      "from": "gen",
+      "to": "alias",
+      "label": "exists",
+      "route": "bottom-channel"
+    },
+    {
+      "from": "alias",
+      "to": "ready",
+      "label": "BM25"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Cache hit",
+      "items": [
+        "One manifest keys both the FAISS cache and the OpenSearch generation",
+        "Unchanged documents skip embedding and bulk indexing"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Cache miss",
+      "items": [
+        "Any added, removed, or edited file changes the manifest",
+        "FAISS saves atomically; the alias moves only once the new generation is searchable"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Warm ahead",
+      "items": [
+        "python app.py --warm-index runs this flow without answering",
+        "Interactive users never query a half-built index"
+      ]
+    }
+  ]
+}

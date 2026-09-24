@@ -5399,8 +5399,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <text data-detail="context" x="614" y="111" class="t-muted" font-size="7" text-anchor="middle">RRF 0.5 / 0.5</text>
         </g>
 
-        <g id="node-faiss" data-node-id="faiss" data-node-label="FAISS" tabindex="0" role="button" aria-label="Focus FAISS, in-memory vectors, Sequence participant" aria-pressed="false" data-node-kind="database" data-node-sublabel="in-memory vectors" data-node-context="Sequence participant">
-          <title>FAISS · in-memory vectors · Sequence participant</title>
+        <g id="node-faiss" data-node-id="faiss" data-node-label="FAISS" tabindex="0" role="button" aria-label="Focus FAISS, cached vectors, Sequence participant" aria-pressed="false" data-node-kind="database" data-node-sublabel="cached vectors" data-node-context="Sequence participant">
+          <title>FAISS · cached vectors · Sequence participant</title>
           <rect x="692" y="72" width="96" height="54" rx="6" class="c-mask"/>
           <rect x="692" y="72" width="96" height="54" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(698 78) scale(0.6875)">
@@ -5408,11 +5408,11 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="740" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">FAISS</text>
-          <text data-detail="context" x="740" y="111" class="t-muted" font-size="7" text-anchor="middle">in-memory vectors</text>
+          <text data-detail="context" x="740" y="111" class="t-muted" font-size="7" text-anchor="middle">cached vectors</text>
         </g>
 
-        <g id="node-opensearch" data-node-id="opensearch" data-node-label="OpenSearch" tabindex="0" role="button" aria-label="Focus OpenSearch, langlab-chunks, Sequence participant, OpenSearch" aria-pressed="false" data-node-kind="database" data-node-sublabel="langlab-chunks" data-node-context="Sequence participant" data-node-brand="OpenSearch" data-node-brand-id="opensearch" data-node-brand-status="preset" data-node-brand-source="https://opensearch.org/trademark-brand-policy.html">
-          <title>OpenSearch · langlab-chunks · Sequence participant · OpenSearch</title>
+        <g id="node-opensearch" data-node-id="opensearch" data-node-label="OpenSearch" tabindex="0" role="button" aria-label="Focus OpenSearch, langlab-chunks alias, Sequence participant, OpenSearch" aria-pressed="false" data-node-kind="database" data-node-sublabel="langlab-chunks alias" data-node-context="Sequence participant" data-node-brand="OpenSearch" data-node-brand-id="opensearch" data-node-brand-status="preset" data-node-brand-source="https://opensearch.org/trademark-brand-policy.html">
+          <title>OpenSearch · langlab-chunks alias · Sequence participant · OpenSearch</title>
           <rect x="818" y="72" width="96" height="54" rx="6" class="c-mask"/>
           <rect x="818" y="72" width="96" height="54" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(824 78) scale(0.6875)">
@@ -5425,7 +5425,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
             <rect width="16" height="16" rx="4" class="brand-mark-frame"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="866" y="94" class="t-primary" font-size="8" font-weight="600" text-anchor="middle">OpenSearch</text>
-          <text data-detail="context" x="866" y="111" class="t-muted" font-size="7" text-anchor="middle">langlab-chunks</text>
+          <text data-detail="context" x="866" y="111" class="t-muted" font-size="7" text-anchor="middle">langlab-chunks alias</text>
         </g>
 
         <g id="node-openai" data-node-id="openai" data-node-label="OpenAI API" tabindex="0" role="button" aria-label="Focus OpenAI API, LLM + embeddings, Sequence participant, OpenAI" aria-pressed="false" data-node-kind="external" data-node-sublabel="LLM + embeddings" data-node-context="Sequence participant" data-node-brand="OpenAI" data-node-brand-id="openai" data-node-brand-status="preset" data-node-brand-source="https://openai.com/brand/">
@@ -5657,7 +5657,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <h3>Built once</h3>
         </div>
         <ul>
-          <li>&bull; Both indexes are built at startup from the same 500/50 chunks</li>
+          <li>&bull; Both indexes come from the same 500/50 chunks and are reused while the manifest is unchanged</li>
           <li>&bull; st.cache_resource reuses the chains on every question</li>
         </ul>
       </div>
@@ -5680,7 +5680,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </div>
         <ul>
           <li>&bull; Better recall, not lower latency: both searches run one after the other</li>
-          <li>&bull; Enabled only when RETRIEVER_MODE=hybrid</li>
+          <li>&bull; Default mode; RETRIEVER_MODE=faiss or opensearch opts out</li>
         </ul>
       </div>
     </div>

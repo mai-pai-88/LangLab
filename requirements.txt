@@ -10,4 +10,5 @@ langchain-text-splitters
 opensearch-py
 pypdf
 python-dotenv
+pytest>=8
 streamlit

@@ -42,7 +42,7 @@ def run_aws_login():
     try:
         result = subprocess.run(["aws", "login"])
         return result.returncode == 0
-    except (KeyboardInterrupt, subprocess.SubprocessError) as e:
+    except (KeyboardInterrupt, OSError, subprocess.SubprocessError) as e:
         print(f"'aws login' failed: {e}")
         return False
 
@@ -103,20 +103,26 @@ def load_secrets(secret_name="LANGLAB_SECRETS", region_name=None):
 
     # Write to .env file in workspace
     env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    with open(env_file, "w") as f:
-        for key, value in secrets.items():
-            f.write(f"{key}={value}\n")
+    try:
+        with open(env_file, "w", encoding="utf-8") as env_handle:
+            for key, value in secrets.items():
+                env_handle.write(f"{key}={value}\n")
+    except OSError as error:
+        print(f"Warning: secrets were loaded but could not be written to {env_file}: {error}")
 
     # Append export commands to ~/.bashrc for interactive shell sessions
     bashrc_file = os.path.expanduser("~/.bashrc")
-    if os.path.exists(bashrc_file):
-        with open(bashrc_file, "r") as f:
-            content = f.read()
-        marker = "# LANGLAB_SECRETS"
-        if marker not in content:
-            export_block = f"\n{marker}\n" + "\n".join([f'export {k}="{v}"' for k, v in secrets.items()]) + "\n"
-            with open(bashrc_file, "a") as f:
-                f.write(export_block)
+    try:
+        if os.path.exists(bashrc_file):
+            with open(bashrc_file, "r", encoding="utf-8") as bashrc_handle:
+                content = bashrc_handle.read()
+            marker = "# LANGLAB_SECRETS"
+            if marker not in content:
+                export_block = f"\n{marker}\n" + "\n".join([f'export {k}="{v}"' for k, v in secrets.items()]) + "\n"
+                with open(bashrc_file, "a", encoding="utf-8") as bashrc_handle:
+                    bashrc_handle.write(export_block)
+    except OSError as error:
+        print(f"Warning: secrets were loaded but could not update {bashrc_file}: {error}")
 
     print(f"Successfully loaded {len(secrets)} secret(s) from {secret_name} into environment variables.")
     return secrets
